@@ -1,0 +1,37 @@
+{
+  "name": "hrm-bigwig-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "nodemon server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BigwigMediaDigital968/HRM-Bigwig-Backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/BigwigMediaDigital968/HRM-Bigwig-Backend/issues"
+  },
+  "homepage": "https://github.com/BigwigMediaDigital968/HRM-Bigwig-Backend#readme",
+  "description": "",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cloudinary": "^1.41.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.4",
+    "express": "^5.2.1",
+    "install": "^0.13.0",
+    "joi": "^18.0.2",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.1.6",
+    "multer": "^2.0.2",
+    "multer-storage-cloudinary": "^4.0.0",
+    "npm": "^11.9.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
