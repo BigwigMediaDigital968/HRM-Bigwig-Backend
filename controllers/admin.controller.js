@@ -3,6 +3,8 @@ const Employee = require("../models/Employee.model");
 const generateEmployeeId = require("../utils/generateEmployeeId");
 const generatePassword = require("../utils/generatePassword");
 const EmployeeDetails = require("../models/EmployeeDetails.model");
+const LeaveRequest = require("../models/LeaveRequest.model");
+const LeaveBalance = require("../models/LeaveBalance.model");
 
 // Creating new employee
 exports.createEmployee = async (req, res) => {
@@ -84,20 +86,27 @@ exports.getEmployeeById = async (req, res) => {
     const { employeeId } = req.params;
 
     const employee = await Employee.findOne({ employeeId }).select("-password");
-
     if (!employee) {
       return res.status(404).json({ message: "Employee not found" });
     }
 
-    const details = await EmployeeDetails.findOne({
-      employee: employee._id,
-    });
+    const [details, leaveBalance, leaves] = await Promise.all([
+      EmployeeDetails.findOne({ employee: employee._id }),
+      LeaveBalance.findOne({ employee: employee._id }),
+      LeaveRequest.find({ employee: employee._id }).sort({ createdAt: -1 }),
+    ]);
 
     res.status(200).json({
       success: true,
       data: {
         ...employee.toObject(),
         employeeDetails: details || null,
+        leaveBalance: leaveBalance || {
+          totalLeaves: 0,
+          usedLeaves: 0,
+          availableLeaves: 0,
+        },
+        leaves,
       },
     });
   } catch (error) {

@@ -31,7 +31,7 @@ router.get("/employees", protect, allowRoles("ADMIN"), getAllEmployees);
 
 // Get single employee
 router.get(
-  "/employees/:employeeId",
+  "/employee/:employeeId",
   protect,
   allowRoles("ADMIN"),
   getEmployeeById,
