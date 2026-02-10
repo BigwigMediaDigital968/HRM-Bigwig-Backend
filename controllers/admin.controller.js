@@ -34,7 +34,7 @@ exports.createEmployee = async (req, res) => {
         email: employee.email,
         role: employee.role,
         temporaryPassword: plainPassword,
-        portalUrl: "https://company.com/employee-login",
+        portalUrl: "https://company.com/employee/login",
       },
     });
   } catch (error) {

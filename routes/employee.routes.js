@@ -4,9 +4,15 @@ const router = express.Router();
 const upload = require("../middleware/upload.middleware");
 const { protect } = require("../middleware/auth.middleware");
 const { allowRoles } = require("../middleware/role.middleware");
-const { submitEmployeeDetails } = require("../controllers/employee.controller");
+const {
+  submitEmployeeDetails,
+  getMyEmployeeDetails,
+} = require("../controllers/employee.controller");
 const { employeeDetailsSchema } = require("../validations/employee.validation");
 
+/**
+ * Submit / Update employee details
+ */
 router.put(
   "/details",
   protect,
@@ -23,7 +29,17 @@ router.put(
     }
     next();
   },
-  submitEmployeeDetails,
+  submitEmployeeDetails
+);
+
+/**
+ * ✅ Get logged-in employee's own details
+ */
+router.get(
+  "/details/me",
+  protect,
+  allowRoles("EMPLOYEE"),
+  getMyEmployeeDetails
 );
 
 module.exports = router;

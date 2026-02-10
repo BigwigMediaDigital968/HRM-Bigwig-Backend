@@ -1,6 +1,9 @@
 const Employee = require("../models/Employee.model");
 const EmployeeDetails = require("../models/EmployeeDetails.model");
 
+/**
+ * Submit / Update Employee Details
+ */
 exports.submitEmployeeDetails = async (req, res) => {
   try {
     const employeeId = req.user.id;
@@ -47,7 +50,7 @@ exports.submitEmployeeDetails = async (req, res) => {
     const details = await EmployeeDetails.findOneAndUpdate(
       { employee: employeeId },
       detailsPayload,
-      { upsert: true, new: true },
+      { upsert: true, new: true }
     );
 
     employee.verificationStatus = "PENDING";
@@ -56,6 +59,33 @@ exports.submitEmployeeDetails = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Employee details submitted successfully",
+      data: details,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+/**
+ * ✅ Get Logged-in Employee's Own Details
+ */
+exports.getMyEmployeeDetails = async (req, res) => {
+  try {
+    const employeeId = req.user.id;
+
+    const details = await EmployeeDetails.findOne({
+      employee: employeeId,
+    }).populate("employee", "email role verificationStatus");
+
+    if (!details) {
+      return res.status(404).json({
+        message: "Employee details not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
       data: details,
     });
   } catch (error) {
