@@ -152,8 +152,8 @@ exports.verifyOrRejectEmployee = async (req, res) => {
   }
 };
 
-// DELETE (Deactivate) Employee
-exports.deactiveteEmployee = async (req, res) => {
+// (Activate/Deactivate) Employee
+exports.toggleEmployeeStatus = async (req, res) => {
   try {
     const { employeeId } = req.params;
 
@@ -162,27 +162,23 @@ exports.deactiveteEmployee = async (req, res) => {
       return res.status(404).json({ message: "Employee not found" });
     }
 
-    // Prevent deleting admin
     if (employee.role === "ADMIN") {
       return res
         .status(403)
-        .json({ message: "Admin account cannot be deleted" });
+        .json({ message: "Admin account cannot be modified" });
     }
 
-    // Already inactive
-    if (!employee.isActive) {
-      return res.status(400).json({ message: "Employee already inactive" });
-    }
-
-    employee.isActive = false;
-    employee.deactivetedAt = new Date();
-    employee.deactivetedBy = req.user.employeeId;
+    employee.isActive = !employee.isActive;
+    employee.updatedAt = new Date();
+    employee.updatedBy = req.user.employeeId;
 
     await employee.save();
 
     return res.status(200).json({
       success: true,
-      message: "Employee deactivated successfully",
+      message: `Employee ${
+        employee.isActive ? "activated" : "deactivated"
+      } successfully`,
       data: {
         employeeId: employee.employeeId,
         isActive: employee.isActive,

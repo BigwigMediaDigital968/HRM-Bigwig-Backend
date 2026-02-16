@@ -14,7 +14,7 @@ const storage = new CloudinaryStorage({
     return {
       folder,
       resource_type: file.mimetype === "application/pdf" ? "raw" : "image",
-      allowed_formats: ["jpg", "png", "jpeg", "pdf"],
+      allowed_formats: ["jpg", "png", "jpeg", "pdf", "webp"],
     };
   },
 });

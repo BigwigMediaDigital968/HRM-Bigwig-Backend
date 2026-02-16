@@ -8,6 +8,7 @@ const {
   getMyAttendance,
   getMyMonthlySummary,
   getMonthlySummaryAdmin,
+  checkOut,
 } = require("../controllers/attendance.controller.js");
 const { protect, adminOnly } = require("../middleware/auth.middleware.js");
 
@@ -15,6 +16,7 @@ const { protect, adminOnly } = require("../middleware/auth.middleware.js");
 router.post("/mark", protect, markAttendance);
 router.get("/my-attendance", protect, getMyAttendance);
 router.get("/my-attendance/summary", protect, getMyMonthlySummary);
+router.post("/checkout", protect, checkOut);
 
 // Admin
 router.get("/admin/all", protect, adminOnly, getAllAttendanceAdmin);

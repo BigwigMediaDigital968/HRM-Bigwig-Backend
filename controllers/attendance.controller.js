@@ -2,84 +2,85 @@ const Attendance = require("../models/Attendance.model");
 const OfficeLocation = require("../models/OfficeLocation.model");
 const { getDistanceInMeters } = require("../utils/calcDistance.js");
 const { getDaysInMonth } = require("../utils/getDaysInMonth.js");
+const { isWorkingDay } = require("../utils/isWorkingDay");
+
+const getWorkingDaysInMonth = (year, month) => {
+  const totalDays = new Date(year, month, 0).getDate();
+  let workingDays = 0;
+
+  for (let d = 1; d <= totalDays; d++) {
+    const date = new Date(year, month - 1, d);
+    if (isWorkingDay(date)) {
+      workingDays++;
+    }
+  }
+
+  return workingDays;
+};
 
 // Mark Attendance
 exports.markAttendance = async (req, res) => {
   try {
     const { workMode, latitude, longitude, delayReason } = req.body;
 
-    if (!workMode) {
-      return res.status(400).json({ message: "Work mode is required" });
+    if (!date) {
+      return res.status(400).json({ message: "Date is required" });
     }
 
-    const today = new Date().toISOString().split("T")[0];
+    const attendanceDate = new Date(date);
+    attendanceDate.setHours(0, 0, 0, 0);
 
-    // Check already marked
+    // ❌ Check working day
+    if (!isWorkingDay(today)) {
+      return res.status(400).json({
+        message: "Today is not a working day",
+      });
+    }
+
+    if (attendanceDate > new Date()) {
+      return res.status(400).json({
+        message: "Future date attendance not allowed",
+      });
+    }
+
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    if (attendanceDate < sevenDaysAgo) {
+      return res.status(400).json({
+        message: "Cannot mark attendance older than 7 days",
+      });
+    }
+
     const existing = await Attendance.findOne({
       employee: req.user.id,
-      date: today,
+      date: attendanceDate,
     });
 
     if (existing) {
-      return res.status(400).json({ message: "Attendance already marked" });
+      return res.status(400).json({
+        message: "Attendance already marked",
+      });
     }
 
-    let locationData = {};
     let markedLate = false;
-
-    // Late logic (example: after 10:45 AM)
     const now = new Date();
+
     const lateTime = new Date();
     lateTime.setHours(10, 45, 0, 0);
 
-    if (now > lateTime) {
-      markedLate = true;
-    }
-
-    // 📍 GEO CHECK ONLY FOR WFO
-    if (workMode === "WFO") {
-      if (!latitude || !longitude) {
-        return res.status(400).json({
-          message: "Location required for Work From Office",
-        });
-      }
-
-      const office = await OfficeLocation.findOne({ isActive: true });
-      if (!office) {
-        return res
-          .status(400)
-          .json({ message: "Office location not configured" });
-      }
-
-      const distance = getDistanceInMeters(
-        latitude,
-        longitude,
-        office.latitude,
-        office.longitude,
-      );
-
-      locationData = {
-        latitude,
-        longitude,
-        distanceFromOffice: Math.round(distance),
-      };
-
-      if (distance > office.radiusInMeters) {
-        return res.status(403).json({
-          message: "You are outside office premises",
-        });
-      }
-    }
+    if (now > lateTime) markedLate = true;
 
     const attendance = await Attendance.create({
       employee: req.user.id,
-      date: today,
-      checkInTime: now,
+      date: attendanceDate,
+      checkInTime: new Date(),
+      status: "PRESENT",
       workMode,
-      location: locationData,
       delayReason: markedLate ? delayReason || "" : "",
       markedLate,
       delayStatus: markedLate ? "PENDING" : "APPROVED",
+      location: workMode === "WFO" ? { latitude, longitude } : {},
     });
 
     res.status(201).json({
@@ -87,8 +88,8 @@ exports.markAttendance = async (req, res) => {
       message: "Attendance marked successfully",
       data: attendance,
     });
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -139,9 +140,13 @@ exports.getMyMonthlySummary = async (req, res) => {
     const [year, mon] = month.split("-");
     const totalDays = getDaysInMonth(year, mon);
 
+    const start = new Date(`${month}-01`);
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + 1);
+
     const records = await Attendance.find({
       employee: req.user.id,
-      date: { $regex: `^${month}` },
+      date: { $gte: start, $lt: end },
     });
 
     const presentDays = records.length;
@@ -152,7 +157,8 @@ exports.getMyMonthlySummary = async (req, res) => {
     const wfhDays = records.filter((r) => r.workMode === "WFH").length;
     const wfoDays = records.filter((r) => r.workMode === "WFO").length;
 
-    const absentDays = totalDays - presentDays;
+    const workingDays = getWorkingDaysInMonth(year, mon);
+    const absentDays = workingDays - presentDays;
 
     res.json({
       success: true,
@@ -168,6 +174,42 @@ exports.getMyMonthlySummary = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Checkout API
+exports.checkOut = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const attendance = await Attendance.findOne({
+      employee: req.user.id,
+      date: today,
+    });
+
+    if (!attendance) {
+      return res.status(404).json({
+        message: "No check-in found for today",
+      });
+    }
+
+    if (attendance.checkOutTime) {
+      return res.status(400).json({
+        message: "Already checked out",
+      });
+    }
+
+    attendance.checkOutTime = new Date();
+    await attendance.save();
+
+    res.json({
+      success: true,
+      message: "Checked out successfully",
+      data: attendance,
+    });
+  } catch (error) {
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -270,9 +312,14 @@ exports.getMonthlySummaryAdmin = async (req, res) => {
     const [year, mon] = month.split("-");
     const totalDays = getDaysInMonth(year, mon);
 
+    const start = new Date(`${month}-01`);
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + 1);
+
     const records = await Attendance.find({
-      date: { $regex: `^${month}` },
-    }).populate("employee", "employeeId email");
+      employee: req.user.id,
+      date: { $gte: start, $lt: end },
+    });
 
     const summaryMap = {};
 

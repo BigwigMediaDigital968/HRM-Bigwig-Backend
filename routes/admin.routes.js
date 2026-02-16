@@ -6,7 +6,7 @@ const {
   getAllEmployees,
   getEmployeeById,
   verifyOrRejectEmployee,
-  deactiveteEmployee,
+  toggleEmployeeStatus,
 } = require("../controllers/admin.controller");
 const { createEmployeeSchema } = require("../validations/admin.validation");
 const { protect, adminOnly } = require("../middleware/auth.middleware");
@@ -44,6 +44,11 @@ router.put(
   verifyOrRejectEmployee,
 );
 
-router.put("/employee/:employeeId", protect, adminOnly, deactiveteEmployee);
+router.put(
+  "/employee/:employeeId/toggle-status",
+  protect,
+  adminOnly,
+  toggleEmployeeStatus,
+);
 
 module.exports = router;

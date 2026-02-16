@@ -22,7 +22,7 @@ exports.submitEmployeeDetails = async (req, res) => {
     const detailsPayload = {
       employee: employeeId,
       name: req.body.name,
-      email: req.body.email,
+      email: employee.email,
       contact: req.body.contact,
     };
 
@@ -50,7 +50,7 @@ exports.submitEmployeeDetails = async (req, res) => {
     const details = await EmployeeDetails.findOneAndUpdate(
       { employee: employeeId },
       detailsPayload,
-      { upsert: true, new: true }
+      { upsert: true, new: true },
     );
 
     employee.verificationStatus = "PENDING";
@@ -90,6 +90,6 @@ exports.getMyEmployeeDetails = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: error.message });
   }
 };

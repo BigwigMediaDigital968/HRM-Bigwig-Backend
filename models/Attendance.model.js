@@ -9,27 +9,36 @@ const AttendanceSchema = new mongoose.Schema(
     },
 
     date: {
-      type: String, // YYYY-MM-DD
+      type: Date,
       required: true,
     },
 
-    checkInTime: Date,
+    checkInTime: {
+      type: Date,
+    },
+
+    checkOutTime: {
+      type: Date,
+    },
+
+    status: {
+      type: String,
+      enum: ["PRESENT", "ABSENT"],
+      default: "PRESENT",
+    },
 
     workMode: {
       type: String,
       enum: ["WFO", "WFH"],
-      required: true,
     },
 
     location: {
       latitude: Number,
       longitude: Number,
-      distanceFromOffice: Number, // meters
+      distanceFromOffice: Number,
     },
 
-    delayReason: {
-      type: String,
-    },
+    delayReason: String,
 
     delayStatus: {
       type: String,
@@ -42,25 +51,14 @@ const AttendanceSchema = new mongoose.Schema(
       default: false,
     },
 
-    markedByEmployee: {
-      type: Boolean,
-      default: true,
-    },
-
-    approvedBy: {
-      type: String, // ADMIN employeeId
-    },
-    approvedAt: {
-      type: Date,
-    },
-    adminRemarks: {
-      type: String,
-    },
+    approvedBy: String,
+    approvedAt: Date,
+    adminRemarks: String,
   },
   { timestamps: true },
 );
 
-// Prevent duplicate attendance for same day
+// Prevent duplicate attendance per day
 AttendanceSchema.index({ employee: 1, date: 1 }, { unique: true });
 
 module.exports = mongoose.model("Attendance", AttendanceSchema);
