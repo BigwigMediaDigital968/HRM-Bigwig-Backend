@@ -21,7 +21,7 @@ const getWorkingDaysInMonth = (year, month) => {
 // Mark Attendance
 exports.markAttendance = async (req, res) => {
   try {
-    const { workMode, latitude, longitude, delayReason } = req.body;
+    const { workMode, latitude, longitude, delayReason, date } = req.body;
 
     if (!date) {
       return res.status(400).json({ message: "Date is required" });
@@ -29,6 +29,8 @@ exports.markAttendance = async (req, res) => {
 
     const attendanceDate = new Date(date);
     attendanceDate.setHours(0, 0, 0, 0);
+
+    const today = new Date();
 
     // ❌ Check working day
     if (!isWorkingDay(today)) {
@@ -105,9 +107,21 @@ exports.getMyAttendance = async (req, res) => {
       employee: req.user.id,
     };
 
+    // if (month) {
+    //   // month = YYYY-MM
+    //   filter.date = { $regex: `^${month}` };
+    // }
+
     if (month) {
       // month = YYYY-MM
-      filter.date = { $regex: `^${month}` };
+      const start = new Date(`${month}-01`);
+      const end = new Date(start);
+      end.setMonth(end.getMonth() + 1);
+
+      filter.date = {
+        $gte: start,
+        $lt: end,
+      };
     }
 
     if (from && to) {
