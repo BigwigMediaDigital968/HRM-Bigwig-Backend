@@ -1,4 +1,5 @@
 const Attendance = require("../models/Attendance.model");
+const EmployeeModel = require("../models/Employee.model.js");
 const OfficeLocation = require("../models/OfficeLocation.model");
 const { getDistanceInMeters } = require("../utils/calcDistance.js");
 const { getDaysInMonth } = require("../utils/getDaysInMonth.js");
@@ -17,6 +18,24 @@ const getWorkingDaysInMonth = (year, month) => {
 
   return workingDays;
 };
+
+function getWorkingDaysBetween(start, end) {
+  let count = 0;
+  const current = new Date(start);
+
+  while (current <= end) {
+    const day = current.getDay();
+
+    // Skip Sunday (0) & Saturday (6)
+    if (day !== 0) {
+      count++;
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  return count;
+}
 
 // Mark Attendance
 exports.markAttendance = async (req, res) => {
@@ -153,32 +172,57 @@ exports.getMyMonthlySummary = async (req, res) => {
 
     const [year, mon] = month.split("-");
     const totalDays = getDaysInMonth(year, mon);
+    const totalWorkingDays = getWorkingDaysInMonth(year, mon);
 
-    const start = new Date(`${month}-01`);
-    const end = new Date(start);
-    end.setMonth(end.getMonth() + 1);
+    const monthStart = new Date(`${month}-01`);
+    const monthEnd = new Date(monthStart);
+    monthEnd.setMonth(monthEnd.getMonth() + 1);
+
+    const employee = await EmployeeModel.findById(req.user.id);
+
+    const verifiedDate = employee?.verifiedAt
+      ? new Date(employee.verifiedAt)
+      : monthStart;
+
+    const actualStart =
+      verifiedDate > monthStart ? verifiedDate : monthStart;
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    //yesterday.setDate("2026-04-29T10:08:59.133Z");
+    const actualEnd =
+      yesterday < monthEnd
+        ? yesterday
+        : new Date(monthEnd.getTime() - 1);// last day of month
 
     const records = await Attendance.find({
       employee: req.user.id,
-      date: { $gte: start, $lt: end },
+      date: { $gte: actualStart, $lte: actualEnd },
     });
 
     const presentDays = records.length;
+
+    //console.log("Attendance records for summary:", records, employee, presentDays);
+
+
     const lateDays = records.filter(
-      (r) => r.markedLate && r.delayStatus !== "REJECTED",
+      (r) => r.markedLate && r.delayStatus === "REJECTED"
     ).length;
 
     const wfhDays = records.filter((r) => r.workMode === "WFH").length;
     const wfoDays = records.filter((r) => r.workMode === "WFO").length;
 
-    const workingDays = getWorkingDaysInMonth(year, mon);
-    const absentDays = workingDays - presentDays;
+    const workingDays = getWorkingDaysBetween(actualStart, actualEnd);
+
+    const absentDays = Math.max(workingDays - presentDays, 0);
 
     res.json({
       success: true,
       data: {
         month,
         totalDays,
+        totalWorkingDays,
+        workingDays,
         presentDays,
         absentDays,
         lateDays,
