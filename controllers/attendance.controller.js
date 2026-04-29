@@ -362,60 +362,86 @@ exports.approveOrRejectDelay = async (req, res) => {
  */
 exports.getMonthlySummaryAdmin = async (req, res) => {
   try {
-    const { month } = req.query;
+    const { month } = req.query; // expected: "YYYY-MM"
     if (!month) {
-      return res.status(400).json({ message: "Month is required" });
+      return res.status(400).json({ message: "Month is required (YYYY-MM)" });
     }
 
-    const [year, mon] = month.split("-");
-    const totalDays = getDaysInMonth(year, mon);
+    const [yearStr, monStr] = month.split("-");
+    const year = parseInt(yearStr, 10);
+    const mon = parseInt(monStr, 10);
 
-    const start = new Date(`${month}-01`);
-    const end = new Date(start);
-    end.setMonth(end.getMonth() + 1);
+    if (!year || !mon || mon < 1 || mon > 12) {
+      return res.status(400).json({ message: "Invalid month format. Use YYYY-MM" });
+    }
 
+    const workingDays = getWorkingDaysInMonth(year, mon);
+
+    // Unambiguous date range: start of month → start of next month (exclusive)
+    const start = new Date(year, mon - 1, 1);
+    const end = new Date(year, mon, 1);
+
+    // Fetch all attendance records for the month, with full employee profile
     const records = await Attendance.find({
-      employee: req.user.id,
       date: { $gte: start, $lt: end },
-    });
+    }).populate("employee");
 
+    // Aggregate per employee
     const summaryMap = {};
 
     records.forEach((r) => {
-      const empId = r.employee.employeeId;
+      if (!r.employee) return; // guard against orphaned records
+
+      const joinDate = r.employee.verifiedAt ? new Date(r.employee.verifiedAt) : start;
+      const effectiveStart = joinDate > start ? joinDate : start;
+
+      const effectiveWorkingDays = getWorkingDaysBetween(effectiveStart, end);
+
+      const empId = r.employee._id.toString();
 
       if (!summaryMap[empId]) {
         summaryMap[empId] = {
-          employeeId: empId,
-          email: r.employee.email,
+          // Full employee profile
+          employee: r.employee,
+
+          // Attendance counters
           presentDays: 0,
           lateDays: 0,
           wfhDays: 0,
           wfoDays: 0,
+          workingDays: effectiveWorkingDays,   // ← per-employee, not global
+
         };
       }
 
-      summaryMap[empId].presentDays += 1;
-      if (r.markedLate && r.delayStatus !== "REJECTED") {
-        summaryMap[empId].lateDays += 1;
-      }
-      if (r.workMode === "WFH") summaryMap[empId].wfhDays += 1;
-      if (r.workMode === "WFO") summaryMap[empId].wfoDays += 1;
+      const entry = summaryMap[empId];
+      entry.presentDays += 1;
+
+      if (r.markedLate && r.delayStatus === "REJECTED") entry.lateDays += 1;
+      if (r.workMode === "WFH") entry.wfhDays += 1;
+      if (r.workMode === "WFO") entry.wfoDays += 1;
     });
 
+    // Build final summary array
     const summary = Object.values(summaryMap).map((emp) => ({
       ...emp,
-      absentDays: totalDays - emp.presentDays,
-      totalDays,
+      absentDays: emp.workingDays - emp.presentDays - 1,
+      workingDays: emp.workingDays,
     }));
 
-    res.json({
+    // Sort by employeeId for consistent output
+    summary.sort((a, b) => (a.employeeId ?? "").localeCompare(b.employeeId ?? ""));
+
+    return res.json({
       success: true,
+      month,
+      workingDays,
       count: summary.length,
       data: summary,
     });
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server error" });
+    console.error("getMonthlySummaryAdmin error:", error);
+    return res.status(500).json({ message: "Server error" });
   }
 };
