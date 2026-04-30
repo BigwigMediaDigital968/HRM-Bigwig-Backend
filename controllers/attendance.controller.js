@@ -451,7 +451,7 @@ exports.getMonthlySummaryAdmin = async (req, res) => {
     // Build final summary array
     const summary = Object.values(summaryMap).map((emp) => ({
       ...emp,
-      absentDays: emp.workingDays - emp.presentDays - 1,
+      absentDays: emp.workingDays - emp.presentDays,
       workingDays: emp.workingDays,
     }));
 
