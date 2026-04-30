@@ -11,6 +11,7 @@ const {
 const { createEmployeeSchema } = require("../validations/admin.validation");
 const { protect, adminOnly } = require("../middleware/auth.middleware");
 const { allowRoles } = require("../middleware/role.middleware");
+const { updateEmployeePassword } = require("../controllers/auth.controller");
 
 router.post(
   "/create-employee",
@@ -49,6 +50,13 @@ router.put(
   protect,
   adminOnly,
   toggleEmployeeStatus,
+);
+
+router.put(
+  "/employee/:employeeId/update-password",
+  protect,
+  adminOnly,
+  updateEmployeePassword,
 );
 
 module.exports = router;

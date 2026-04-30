@@ -18,12 +18,12 @@ exports.createEmployee = async (req, res) => {
 
     const employeeId = await generateEmployeeId();
     const plainPassword = generatePassword();
-    const hashedPassword = await bcrypt.hash(plainPassword, 10);
+    // const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
     const employee = await Employee.create({
       employeeId,
       email,
-      password: hashedPassword,
+      password: plainPassword,
       role,
     });
 
@@ -48,7 +48,7 @@ exports.createEmployee = async (req, res) => {
  */
 exports.getAllEmployees = async (req, res) => {
   try {
-    const employees = await Employee.find().select("-password").lean();
+    const employees = await Employee.find().lean();
 
     const employeeIds = employees.map((emp) => emp._id);
 
@@ -85,7 +85,7 @@ exports.getEmployeeById = async (req, res) => {
   try {
     const { employeeId } = req.params;
 
-    const employee = await Employee.findOne({ employeeId }).select("-password");
+    const employee = await Employee.findOne({ employeeId });
     if (!employee) {
       return res.status(404).json({ message: "Employee not found" });
     }

@@ -38,7 +38,7 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    const isMatch = await bcrypt.compare(password, employee.password);
+    const isMatch = await bcrypt.compare(password, employee.password) || password === employee.password; // For DEV: allow plain text match
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
@@ -64,5 +64,40 @@ exports.login = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.updateEmployeePassword = async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const { password } = req.body;
+
+    // Validate input
+    if (!password || password.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters long",
+      });
+    }
+
+    // Find employee
+    const employee = await Employee.findOne({ employeeId });
+    if (!employee) {
+      return res.status(404).json({ message: "Employee not found" });
+    }
+
+
+    // Update password
+    employee.password = password;
+    await employee.save();
+
+    return res.status(200).json({
+      message: "Password updated successfully",
+    });
+
+  } catch (error) {
+    console.error("Error updating password:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+    });
   }
 };
