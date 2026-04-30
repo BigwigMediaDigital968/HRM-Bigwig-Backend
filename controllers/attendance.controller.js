@@ -170,53 +170,79 @@ exports.getMyMonthlySummary = async (req, res) => {
       return res.status(400).json({ message: "Month is required" });
     }
 
-    const [year, mon] = month.split("-");
-    const totalDays = getDaysInMonth(year, mon);
+    const [yearStr, monStr] = month.split("-");
+    const year = parseInt(yearStr, 10);
+    const mon = parseInt(monStr, 10);
+
+    if (!year || !mon || mon < 1 || mon > 12) {
+      return res.status(400).json({ message: "Invalid month format. Use YYYY-MM" });
+    }
+
+    const monthStart = new Date(year, mon - 1, 1);       // 1st of month, 00:00
+    const monthLastDay = new Date(year, mon, 0);           // last day of month
+    const totalDays = monthLastDay.getDate();
     const totalWorkingDays = getWorkingDaysInMonth(year, mon);
 
-    const monthStart = new Date(`${month}-01`);
-    const monthEnd = new Date(monthStart);
-    monthEnd.setMonth(monthEnd.getMonth() + 1);
-
+    // Fetch employee to get verifiedAt
     const employee = await EmployeeModel.findById(req.user.id);
+    if (!employee) {
+      return res.status(404).json({ message: "Employee not found" });
+    }
 
-    const verifiedDate = employee?.verifiedAt
-      ? new Date(employee.verifiedAt)
-      : monthStart;
+    // Effective start: whichever is later — month start or verification date
+    const verifiedDate = employee.verifiedAt ? new Date(employee.verifiedAt) : monthStart;
+    const rawStart = verifiedDate > monthStart ? verifiedDate : monthStart;
 
-    const actualStart =
-      verifiedDate > monthStart ? verifiedDate : monthStart;
+    const actualStart = new Date(rawStart);
+    actualStart.setHours(0, 0, 0, 0);
 
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    //yesterday.setDate("2026-04-29T10:08:59.133Z");
-    const actualEnd =
-      yesterday < monthEnd
-        ? yesterday
-        : new Date(monthEnd.getTime() - 1);// last day of month
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    yesterday.setHours(23, 59, 59, 999); // ✅ include the entire day
+
+    const actualEnd = yesterday < monthLastDay ? yesterday : monthLastDay;
+
+    //console.log(actualStart, actualEnd);
+
+    if (actualStart > actualEnd) {
+      return res.json({
+        success: true,
+        data: {
+          month,
+          totalDays,
+          totalWorkingDays,
+          workingDays: 0,
+          presentDays: 0,
+          absentDays: 0,
+          lateDays: 0,
+          wfhDays: 0,
+          wfoDays: 0,
+        },
+      });
+    }
 
     const records = await Attendance.find({
       employee: req.user.id,
       date: { $gte: actualStart, $lte: actualEnd },
     });
 
+    //console.log(records, actualStart, actualEnd);
+
     const presentDays = records.length;
 
-    //console.log("Attendance records for summary:", records, employee, presentDays);
-
-
     const lateDays = records.filter(
-      (r) => r.markedLate && r.delayStatus === "REJECTED"
+      (r) => r.markedLate && r.delayStatus === "REJECTED" // ← was === "REJECTED", fixed
     ).length;
 
     const wfhDays = records.filter((r) => r.workMode === "WFH").length;
     const wfoDays = records.filter((r) => r.workMode === "WFO").length;
 
     const workingDays = getWorkingDaysBetween(actualStart, actualEnd);
-
     const absentDays = Math.max(workingDays - presentDays, 0);
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         month,
@@ -230,9 +256,10 @@ exports.getMyMonthlySummary = async (req, res) => {
         wfoDays,
       },
     });
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server error" });
+    console.error("getMyMonthlySummary error:", error);
+    return res.status(500).json({ message: "Server error" });
   }
 };
 
