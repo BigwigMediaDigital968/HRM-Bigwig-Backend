@@ -33,7 +33,12 @@ exports.login = async (req, res) => {
     /* --------------------------------------------------
        NORMAL EMPLOYEE LOGIN
     -------------------------------------------------- */
-    const employee = await Employee.findOne({ employeeId });
+    const employee = await Employee.findOne({
+      $or: [
+        { employeeId: employeeId },
+        { email: employeeId.toLowerCase() }
+      ]
+    });
     if (!employee || !employee.isActive) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
