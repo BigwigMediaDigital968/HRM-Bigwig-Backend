@@ -2,6 +2,7 @@ const bcrypt = require("bcryptjs");
 const Employee = require("../models/Employee.model");
 const { generateToken } = require("../utils/jwt");
 
+//hello 
 exports.login = async (req, res) => {
   try {
     const { employeeId, password } = req.body;
