@@ -205,7 +205,6 @@ exports.getMyMonthlySummary = async (req, res) => {
     const actualEnd = yesterday < monthLastDay ? yesterday : monthLastDay;
 
     //console.log(actualStart, actualEnd);
-
     if (actualStart > actualEnd) {
       return res.json({
         success: true,
