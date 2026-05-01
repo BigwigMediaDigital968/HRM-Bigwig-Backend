@@ -47,7 +47,7 @@ exports.markAttendance = async (req, res) => {
     }
 
     const attendanceDate = new Date(date);
-    attendanceDate.setHours(0, 0, 0, 0);
+    attendanceDate.setUTCHours(0, 0, 0, 0);
 
     const today = new Date();
 
@@ -65,8 +65,8 @@ exports.markAttendance = async (req, res) => {
     }
 
     const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
+    sevenDaysAgo.setUTCHours(0, 0, 0, 0);
+    sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7);
     if (attendanceDate < sevenDaysAgo) {
       return res.status(400).json({
         message: "Cannot mark attendance older than 7 days",
@@ -84,13 +84,13 @@ exports.markAttendance = async (req, res) => {
       });
     }
 
-    let markedLate = false;
     const now = new Date();
-
+    let markedLate = false;
+    // ✅ Late check: 10:45 AM IST = 05:15 AM UTC — hardcoded, never changes
     const lateTime = new Date();
-    lateTime.setHours(10, 45, 0, 0);
+    lateTime.setUTCHours(5, 15, 0, 0);
+    markedLate = now > lateTime;
 
-    if (now > lateTime) markedLate = true;
 
     const attendance = await Attendance.create({
       employee: req.user.id,
@@ -148,6 +148,8 @@ exports.getMyAttendance = async (req, res) => {
     }
 
     const records = await Attendance.find(filter).sort({ date: -1 });
+    console.log("getMyAttendance filter:", filter);
+    console.log("getMyAttendance records:", records);
 
     res.json({
       success: true,
@@ -178,9 +180,9 @@ exports.getMyMonthlySummary = async (req, res) => {
       return res.status(400).json({ message: "Invalid month format. Use YYYY-MM" });
     }
 
-    const monthStart = new Date(year, mon - 1, 1);       // 1st of month, 00:00
-    const monthLastDay = new Date(year, mon, 0);           // last day of month
-    const totalDays = monthLastDay.getDate();
+    const monthStart   = new Date(Date.UTC(year, mon - 1, 1));
+    const monthLastDay = new Date(Date.UTC(year, mon, 0));          // last day of month
+    const totalDays = monthLastDay.getUTCDate();
     const totalWorkingDays = getWorkingDaysInMonth(year, mon);
 
     // Fetch employee to get verifiedAt
@@ -191,16 +193,17 @@ exports.getMyMonthlySummary = async (req, res) => {
 
     // Effective start: whichever is later — month start or verification date
     const verifiedDate = employee.verifiedAt ? new Date(employee.verifiedAt) : monthStart;
+    verifiedDate.setUTCHours(0, 0, 0, 0);
     const rawStart = verifiedDate > monthStart ? verifiedDate : monthStart;
 
     const actualStart = new Date(rawStart);
-    actualStart.setHours(0, 0, 0, 0);
+    actualStart.setUTCHours(0, 0, 0, 0);
 
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
     const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
-    yesterday.setHours(23, 59, 59, 999); // ✅ include the entire day
+    yesterday.setUTCDate(today.getUTCDate() - 1);
+    yesterday.setUTCHours(23, 59, 59, 999); // ✅ include the entire day
 
     const actualEnd = yesterday < monthLastDay ? yesterday : monthLastDay;
 
@@ -266,7 +269,7 @@ exports.getMyMonthlySummary = async (req, res) => {
 exports.checkOut = async (req, res) => {
   try {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
 
     const attendance = await Attendance.findOne({
       employee: req.user.id,
