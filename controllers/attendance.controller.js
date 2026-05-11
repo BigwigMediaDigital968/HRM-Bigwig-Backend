@@ -1,5 +1,6 @@
 const Attendance = require("../models/Attendance.model");
 const EmployeeModel = require("../models/Employee.model.js");
+const EmployeeDetails = require("../models/EmployeeDetails.model.js");
 const OfficeLocation = require("../models/OfficeLocation.model");
 const { getDistanceInMeters } = require("../utils/calcDistance.js");
 const { getDaysInMonth } = require("../utils/getDaysInMonth.js");
@@ -180,7 +181,7 @@ exports.getMyMonthlySummary = async (req, res) => {
       return res.status(400).json({ message: "Invalid month format. Use YYYY-MM" });
     }
 
-    const monthStart   = new Date(Date.UTC(year, mon - 1, 1));
+    const monthStart = new Date(Date.UTC(year, mon - 1, 1));
     const monthLastDay = new Date(Date.UTC(year, mon, 0));          // last day of month
     const totalDays = monthLastDay.getUTCDate();
     const totalWorkingDays = getWorkingDaysInMonth(year, mon);
@@ -399,6 +400,7 @@ exports.getMonthlySummaryAdmin = async (req, res) => {
     const [yearStr, monStr] = month.split("-");
     const year = parseInt(yearStr, 10);
     const mon = parseInt(monStr, 10);
+    const now = new Date();
 
     if (!year || !mon || mon < 1 || mon > 12) {
       return res.status(400).json({ message: "Invalid month format. Use YYYY-MM" });
@@ -424,7 +426,10 @@ exports.getMonthlySummaryAdmin = async (req, res) => {
       const joinDate = r.employee.verifiedAt ? new Date(r.employee.verifiedAt) : start;
       const effectiveStart = joinDate > start ? joinDate : start;
 
-      const effectiveWorkingDays = getWorkingDaysBetween(effectiveStart, end);
+      const effectiveEnd = new Date(Math.min(end.getTime(), now.getTime()));
+      effectiveEnd.setUTCHours(0, 0, 0, 0);
+
+      const effectiveWorkingDays = getWorkingDaysBetween(effectiveStart, effectiveEnd);
 
       const empId = r.employee._id.toString();
 
@@ -474,3 +479,212 @@ exports.getMonthlySummaryAdmin = async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
+
+const toIST = (date) => {
+  if (!date) return null;
+  const d = new Date(date);
+  // UTC+5:30
+  d.setMinutes(d.getMinutes() + d.getTimezoneOffset() + 330);
+  return d;
+};
+
+const fmtTime = (date) => {
+  const d = toIST(date);
+  if (!d) return "—";
+  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+};
+
+const fmtDate = (date) => {
+  if (!date) return "—";
+  return new Date(date).toLocaleDateString("en-IN", {
+    day: "2-digit", month: "short", year: "numeric",
+  });
+};
+
+const minsWorked = (checkIn, checkOut) => {
+  if (!checkIn || !checkOut) return null;
+  return Math.round((new Date(checkOut) - new Date(checkIn)) / 60000);
+};
+
+const fmtHours = (mins) => {
+  if (mins === null) return "—";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h}h ${m}m`;
+};
+
+
+
+
+// ─── Preview endpoint (returns JSON for the modal preview) ───────────────────
+
+/**
+ * Count Mon–Fri working days between two UTC-zeroed dates, inclusive.
+ */
+
+exports.previewAttendance = async (req, res) => {
+  try {
+    const { employeeId = "all", from, to } = req.query;
+
+    const now = new Date();
+    const start = from
+      ? new Date(from)
+      : new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+    const end = to
+      ? new Date(to)
+      : new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59));
+
+    const effectiveEnd = new Date(Math.min(end.getTime(), now.getTime()));
+    effectiveEnd.setUTCHours(0, 0, 0, 0);
+
+    // ── 1. Scope filter ───────────────────────────────────────────────────────
+    const attendanceQuery = { date: { $gte: start, $lte: effectiveEnd } };
+
+    if (employeeId !== "all") {
+      const emp = await EmployeeModel.findOne({ employeeId }).lean();
+      if (!emp) {
+        return res.status(404).json({ success: false, message: "Employee not found" });
+      }
+      attendanceQuery.employee = emp._id;
+    }
+
+    // ── 2. Fetch attendance records (only PRESENT records exist in DB) ────────
+    const records = await Attendance.find(attendanceQuery)
+      .populate("employee", "employeeId email createdAt") // createdAt = join date
+      .sort({ date: 1 })
+      .lean();
+
+    // ── 3. Batch-fetch EmployeeDetails — fix N+1 ─────────────────────────────
+    const uniqueObjectIds = [
+      ...new Map(
+        records
+          .filter((r) => r.employee?._id)
+          .map((r) => [r.employee._id.toString(), r.employee._id])
+      ).values(),
+    ];
+
+    const detailsList = await EmployeeDetails.find({
+      employee: { $in: uniqueObjectIds },
+    }).lean();
+
+    // objectId string → details
+    const detailsMap = {};
+    detailsList.forEach((d) => {
+      detailsMap[d.employee.toString()] = d;
+    });
+
+    // ── 4. Build per-employee summary ─────────────────────────────────────────
+    //
+    // CORE FIX: No ABSENT records exist in DB.
+    // Absent = workingDays(effectiveStart → rangeEnd) − presentDays
+    //
+    // Edge case — mid-month joiner:
+    // effectiveStart = max(rangeStart, employeeJoinDate)
+    // So a joiner on the 15th only has working days counted from the 15th.
+    //
+    const empMap = {};
+
+    records.forEach((r) => {
+      const eid = r.employee?.employeeId || "unknown";
+      const oidStr = r.employee?._id?.toString();
+
+      if (!empMap[eid]) {
+        const details = oidStr ? detailsMap[oidStr] : null;
+
+        // Join date: use employee account createdAt as proxy.
+        // If your EmployeeDetails has a separate joiningDate field, prefer that.
+        const joinDate = details?.joiningDate
+          ? new Date(details.joiningDate)
+          : r.employee?.createdAt
+            ? new Date(r.employee.createdAt)
+            : start;
+
+        // Effective start = later of range start or join date (mid-month joiner fix)
+        const effectiveStart = new Date(
+          Math.max(start.getTime(), joinDate.setUTCHours(0, 0, 0, 0))
+        );
+
+        const rangeEnd = new Date(effectiveEnd);
+        rangeEnd.setUTCHours(0, 0, 0, 0);
+
+
+        empMap[eid] = {
+          employeeId: eid,
+          name: details?.name || "—",
+          email: r.employee?.email || "—",
+          workingDays: getWorkingDaysBetween(effectiveStart, rangeEnd),
+          presentDays: 0,
+          lateDays: 0,
+          wfoDays: 0,
+          wfhDays: 0,
+        };
+      }
+
+      // Every record in DB is PRESENT — no need to check r.status
+      empMap[eid].presentDays++;
+      if (r.markedLate && r.delayStatus == "REJECTED") empMap[eid].lateDays++;
+      if (r.workMode === "WFO") empMap[eid].wfoDays++;
+      if (r.workMode === "WFH") empMap[eid].wfhDays++;
+    });
+
+    // ── 5. Derive absentDays & attendance % ──────────────────────────────────
+    const summary = Object.values(empMap).map((e) => {
+      // Safety cap: can't be present more days than working days
+      const present = Math.min(e.presentDays, e.workingDays);
+      const absent = Math.max(0, e.workingDays - present);
+      const pct = e.workingDays > 0
+        ? Math.round((present / e.workingDays) * 100)
+        : 0;
+
+      return {
+        employeeId: e.employeeId,
+        name: e.name,
+        email: e.email,
+        totalDays: e.workingDays,   // working days they were expected to attend
+        presentDays: present,
+        absentDays: absent,
+        lateDays: e.lateDays,
+        wfoDays: e.wfoDays,
+        wfhDays: e.wfhDays,
+        attendancePct: pct,
+      };
+    });
+
+    // ── 6. Daily log — full data, no slice ───────────────────────────────────
+    const dailyLog = records.map((r) => {
+      const oidStr = r.employee?._id?.toString();
+      const details = oidStr ? detailsMap[oidStr] : null;
+      return {
+        employeeId: r.employee?.employeeId || "—",
+        name: details?.name || "—",
+        date: fmtDate(r.date),
+        status: r.markedLate && r.delayStatus == "REJECTED" ? 'LATE' : r.status,
+        workMode: r.workMode || "—",
+        checkIn: fmtTime(r.checkInTime),
+        checkOut: fmtTime(r.checkOutTime),
+        hoursWorked: fmtHours(minsWorked(r.checkInTime, r.checkOutTime)),
+        markedLate: r.markedLate,
+        delayStatus: r.delayStatus || "—",
+      };
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        summary,
+        dailyPreview: dailyLog,
+        totalRecords: records.length,
+        dateRange: { from: start, to: end },
+      },
+    });
+
+  } catch (err) {
+    console.error("Preview error:", err);
+    return res.status(500).json({ success: false, message: "Preview failed" });
+  }
+};
+
+
+
+
+// ─── Controller ───────────────────────────────────────────────────────────────

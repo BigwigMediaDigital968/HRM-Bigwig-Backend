@@ -9,6 +9,8 @@ const {
   getMyMonthlySummary,
   getMonthlySummaryAdmin,
   checkOut,
+  previewAttendance,
+  exportAttendance,
 } = require("../controllers/attendance.controller.js");
 const { protect, adminOnly } = require("../middleware/auth.middleware.js");
 
@@ -33,5 +35,18 @@ router.get(
   adminOnly,
   getMonthlySummaryAdmin,
 );
+
+router.get(
+  "/export/preview",
+  protect,
+  adminOnly,
+  previewAttendance
+);
+ 
+/**
+ * GET /api/attendance/export
+ * Same query params as preview.
+ * Streams an .xlsx file as a download.
+ */
 
 module.exports = router;
