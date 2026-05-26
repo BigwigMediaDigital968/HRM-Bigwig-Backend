@@ -44,35 +44,47 @@ exports.markAttendance = async (req, res) => {
     const { workMode, latitude, longitude, delayReason, date } = req.body;
 
     if (!date) {
-      return res.status(400).json({ message: "Date is required" });
+      return res.status(400).json({
+        message: "Date is required",
+      });
     }
 
+    // =========================
+    // DATE VALIDATION
+    // =========================
+
     const attendanceDate = new Date(date);
-    attendanceDate.setUTCHours(0, 0, 0, 0);
+    attendanceDate.setHours(0, 0, 0, 0);
 
     const today = new Date();
 
-    // ❌ Check working day
+    // Check working day
     if (!isWorkingDay(today)) {
       return res.status(400).json({
         message: "Today is not a working day",
       });
     }
 
+    // Future date check
     if (attendanceDate > new Date()) {
       return res.status(400).json({
         message: "Future date attendance not allowed",
       });
     }
 
+    // Max 7 days old
     const sevenDaysAgo = new Date();
-    sevenDaysAgo.setUTCHours(0, 0, 0, 0);
-    sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
     if (attendanceDate < sevenDaysAgo) {
       return res.status(400).json({
         message: "Cannot mark attendance older than 7 days",
       });
     }
+
+    // =========================
+    // DUPLICATE CHECK
+    // =========================
 
     const existing = await Attendance.findOne({
       employee: req.user.id,
@@ -85,13 +97,71 @@ exports.markAttendance = async (req, res) => {
       });
     }
 
-    const now = new Date();
-    let markedLate = false;
-    // ✅ Late check: 10:45 AM IST = 05:15 AM UTC — hardcoded, never changes
-    const lateTime = new Date();
-    lateTime.setUTCHours(5, 15, 0, 0);
-    markedLate = now > lateTime;
+    // =========================
+    // OFFICE LOCATION VALIDATION
+    // =========================
 
+    let matchedOffice = null;
+
+    if (workMode === "WFO") {
+      if (!latitude || !longitude) {
+        return res.status(400).json({
+          message: "Location is required for WFO attendance",
+        });
+      }
+
+      // Fetch all office locations
+      const officeLocations = await OfficeLocation.find();
+
+      if (!officeLocations.length) {
+        return res.status(400).json({
+          message: "No office locations configured",
+        });
+      }
+
+      // Check if user is inside any office radius
+      for (const office of officeLocations) {
+        const distance = getDistanceInMeters(
+          Number(latitude),
+          Number(longitude),
+          Number(office.latitude),
+          Number(office.longitude),
+        );
+
+        if (distance <= office.radiusInMeters) {
+          matchedOffice = office;
+          break;
+        }
+      }
+
+      // User outside office area
+      if (!matchedOffice) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "You are outside the office location radius. Attendance not allowed.",
+        });
+      }
+    }
+
+    // =========================
+    // LATE MARKING LOGIC
+    // =========================
+
+    let markedLate = false;
+
+    const now = new Date();
+
+    const lateTime = new Date();
+    lateTime.setHours(10, 45, 0, 0);
+
+    if (now > lateTime) {
+      markedLate = true;
+    }
+
+    // =========================
+    // CREATE ATTENDANCE
+    // =========================
 
     const attendance = await Attendance.create({
       employee: req.user.id,
@@ -99,10 +169,20 @@ exports.markAttendance = async (req, res) => {
       checkInTime: new Date(),
       status: "PRESENT",
       workMode,
+
       delayReason: markedLate ? delayReason || "" : "",
       markedLate,
       delayStatus: markedLate ? "PENDING" : "APPROVED",
-      location: workMode === "WFO" ? { latitude, longitude } : {},
+
+      location:
+        workMode === "WFO"
+          ? {
+              latitude,
+              longitude,
+              officeId: matchedOffice?._id,
+              officeName: matchedOffice?.name,
+            }
+          : {},
     });
 
     res.status(201).json({
@@ -112,7 +192,10 @@ exports.markAttendance = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Server error" });
+
+    res.status(500).json({
+      message: "Server error",
+    });
   }
 };
 
