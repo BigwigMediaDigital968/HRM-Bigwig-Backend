@@ -54,7 +54,7 @@ exports.markAttendance = async (req, res) => {
     // =========================
 
     const attendanceDate = new Date(date);
-    attendanceDate.setHours(0, 0, 0, 0);
+    attendanceDate.setUTCHours(0, 0, 0, 0);
 
     const today = new Date();
 
@@ -153,7 +153,8 @@ exports.markAttendance = async (req, res) => {
     const now = new Date();
 
     const lateTime = new Date();
-    lateTime.setHours(10, 45, 0, 0);
+    // 10:45 IST = 05:15 UTC
+    lateTime.setUTCHours(5, 15, 0, 0);
 
     if (now > lateTime) {
       markedLate = true;
@@ -177,11 +178,11 @@ exports.markAttendance = async (req, res) => {
       location:
         workMode === "WFO"
           ? {
-              latitude,
-              longitude,
-              officeId: matchedOffice?._id,
-              officeName: matchedOffice?.name,
-            }
+            latitude,
+            longitude,
+            officeId: matchedOffice?._id,
+            officeName: matchedOffice?.name,
+          }
           : {},
     });
 
@@ -232,8 +233,8 @@ exports.getMyAttendance = async (req, res) => {
     }
 
     const records = await Attendance.find(filter).sort({ date: -1 });
-    console.log("getMyAttendance filter:", filter);
-    console.log("getMyAttendance records:", records);
+    // console.log("getMyAttendance filter:", filter);
+    // console.log("getMyAttendance records:", records);
 
     res.json({
       success: true,
@@ -355,12 +356,15 @@ exports.checkOut = async (req, res) => {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
+    console.log("Checkout request for employee:", req.user.id, "on date:", today);
+
     const attendance = await Attendance.findOne({
       employee: req.user.id,
       date: today,
     });
 
     if (!attendance) {
+      // console.log("No attendance record found for checkout:")
       return res.status(404).json({
         message: "No check-in found for today",
       });

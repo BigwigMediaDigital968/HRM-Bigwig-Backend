@@ -33,6 +33,6 @@
     "npm": "^11.9.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
+    "nodemon": "^3.1.14"
   }
 }

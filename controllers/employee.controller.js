@@ -74,22 +74,75 @@ exports.getMyEmployeeDetails = async (req, res) => {
   try {
     const employeeId = req.user.id;
 
-    const details = await EmployeeDetails.findOne({
-      employee: employeeId,
-    }).populate("employee", "email role verificationStatus");
+    const employee = await Employee.findById(employeeId)
+      .populate("details")
+      .populate("designation")
+      .populate("department")
+      .populate({
+        path: "reportingManager",
+        select: "employeeId email",
+        populate: {
+          path: "details",
+          select: "name",
+        },
+      }).lean({ virtuals: true });
+    // console.log("Employee with details:", employee);
 
-    if (!details) {
+    if (!employee) {
       return res.status(404).json({
-        message: "Employee details not found",
+        message: "Employee not found",
       });
     }
 
     return res.status(200).json({
       success: true,
-      data: details,
+      data: employee,
     });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: error.message });
+  }
+};
+
+exports.updateEmployeeAssignment = async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    console.log("Updating assignment for employee:", employeeId);
+    const {
+      role,
+      designation,
+      department,
+      reportingManager,
+    } = req.body;
+
+    const employee = await Employee.findOne({ employeeId });
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Employee not found",
+      });
+    }
+
+    employee.role = role ?? employee.role;
+    employee.designation = designation ?? employee.designation;
+    employee.department = department ?? employee.department;
+    employee.reportingManager =
+      reportingManager ?? employee.reportingManager;
+
+    await employee.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Employee updated successfully",
+      data: employee,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+    });
   }
 };

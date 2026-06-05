@@ -9,7 +9,9 @@ const LeaveBalance = require("../models/LeaveBalance.model");
 // Creating new employee
 exports.createEmployee = async (req, res) => {
   try {
-    const { email, role } = req.body;
+    const { email, role, designation,
+      department,
+      reportingManager, } = req.body;
 
     const existing = await Employee.findOne({ email });
     if (existing) {
@@ -25,6 +27,9 @@ exports.createEmployee = async (req, res) => {
       email,
       password: plainPassword,
       role,
+      designation: designation || null,
+      department: department || null,
+      reportingManager: reportingManager || null,
     });
 
     return res.status(201).json({
@@ -33,6 +38,9 @@ exports.createEmployee = async (req, res) => {
         employeeId: employee.employeeId,
         email: employee.email,
         role: employee.role,
+        designation: employee.designation,
+        department: employee.department,
+        reportingManager: employee.reportingManager,
         temporaryPassword: plainPassword,
         portalUrl: "https://company.com/employee/login",
       },
@@ -48,7 +56,8 @@ exports.createEmployee = async (req, res) => {
  */
 exports.getAllEmployees = async (req, res) => {
   try {
-    const employees = await Employee.find().lean();
+    const employees = await Employee.find().populate("designation").populate("department").populate("reportingManager", "name employeeId _id").lean();
+    //console.log(employees);
 
     const employeeIds = employees.map((emp) => emp._id);
 
@@ -85,13 +94,23 @@ exports.getEmployeeById = async (req, res) => {
   try {
     const { employeeId } = req.params;
 
-    const employee = await Employee.findOne({ employeeId });
+    const employee = await Employee.findOne({ employeeId })
+      .populate("details")
+      .populate("designation")
+      .populate("department")
+      .populate({
+        path: "reportingManager",
+        select: "employeeId email",
+        populate: {
+          path: "details",
+          select: "name",
+        },
+      }).lean({ virtuals: true });
     if (!employee) {
       return res.status(404).json({ message: "Employee not found" });
     }
 
-    const [details, leaveBalance, leaves] = await Promise.all([
-      EmployeeDetails.findOne({ employee: employee._id }),
+    const [leaveBalance, leaves] = await Promise.all([
       LeaveBalance.findOne({ employee: employee._id }),
       LeaveRequest.find({ employee: employee._id }).sort({ createdAt: -1 }),
     ]);
@@ -99,8 +118,7 @@ exports.getEmployeeById = async (req, res) => {
     res.status(200).json({
       success: true,
       data: {
-        ...employee.toObject(),
-        employeeDetails: details || null,
+        ...employee,
         leaveBalance: leaveBalance || {
           totalLeaves: 0,
           usedLeaves: 0,
@@ -176,9 +194,8 @@ exports.toggleEmployeeStatus = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Employee ${
-        employee.isActive ? "activated" : "deactivated"
-      } successfully`,
+      message: `Employee ${employee.isActive ? "activated" : "deactivated"
+        } successfully`,
       data: {
         employeeId: employee.employeeId,
         isActive: employee.isActive,

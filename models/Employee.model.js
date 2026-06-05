@@ -20,11 +20,11 @@ const EmployeeSchema = new mongoose.Schema(
 
     isActive: { type: Boolean, default: true },
 
-    deactivetedAt: {
+    deactivatedAt: {
       type: Date,
     },
 
-    deactivetedBy: {
+    deactivatedBy: {
       type: String, // ADMIN employeeId
     },
 
@@ -38,8 +38,28 @@ const EmployeeSchema = new mongoose.Schema(
     verifiedAt: {
       type: Date,
     },
+    designation: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Designation",
+    },
+    reportingManager: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Employee",
+      default: null,
+    },
+    department: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+    }
   },
   { timestamps: true },
 );
+
+EmployeeSchema.virtual("details", {
+  ref: "EmployeeDetails",
+  localField: "_id",
+  foreignField: "employee",
+  justOne: true,
+});
 
 module.exports = mongoose.model("Employee", EmployeeSchema);

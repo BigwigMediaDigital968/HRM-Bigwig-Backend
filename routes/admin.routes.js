@@ -12,6 +12,15 @@ const { createEmployeeSchema } = require("../validations/admin.validation");
 const { protect, adminOnly } = require("../middleware/auth.middleware");
 const { allowRoles } = require("../middleware/role.middleware");
 const { updateEmployeePassword } = require("../controllers/auth.controller");
+const departmentRoutes = require("./department.routes");
+const designationRoutes = require("./designation.routes");
+const { updateEmployeeAssignment } = require("../controllers/employee.controller");
+
+console.log("Admin routes loaded");
+router.use("/departments", protect,
+  allowRoles("ADMIN"), departmentRoutes);
+router.use("/designations", protect,
+  allowRoles("ADMIN"), designationRoutes);
 
 router.post(
   "/create-employee",
@@ -57,6 +66,13 @@ router.put(
   protect,
   adminOnly,
   updateEmployeePassword,
+);
+
+router.put(
+  "/employee/:employeeId/assignment",
+  protect,
+  allowRoles("ADMIN"),
+  updateEmployeeAssignment
 );
 
 module.exports = router;
