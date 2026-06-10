@@ -359,29 +359,12 @@ exports.checkOut = async (req, res) => {
     const { latitude, longitude } = req.body;
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-
-    const office = await OfficeLocation.findById(attendance.location.officeId);
-
     console.log(
       "Checkout request for employee:",
       req.user.id,
       "on date:",
       today,
     );
-
-    const distance = getDistanceInMeters(
-      Number(latitude),
-      Number(longitude),
-      Number(office.latitude),
-      Number(office.longitude),
-    );
-
-    if (distance > office.radiusInMeters) {
-      return res.status(403).json({
-        success: false,
-        message: "Checkout must be done from the same office location.",
-      });
-    }
 
     const attendance = await Attendance.findOne({
       employee: req.user.id,
@@ -394,6 +377,8 @@ exports.checkOut = async (req, res) => {
         message: "No check-in found for today",
       });
     }
+
+    const office = await OfficeLocation.findById(attendance.location.officeId);
 
     if (attendance.checkOutTime) {
       return res.status(400).json({
