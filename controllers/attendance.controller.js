@@ -178,11 +178,11 @@ exports.markAttendance = async (req, res) => {
       location:
         workMode === "WFO"
           ? {
-            latitude,
-            longitude,
-            officeId: matchedOffice?._id,
-            officeName: matchedOffice?.name,
-          }
+              latitude,
+              longitude,
+              officeId: matchedOffice?._id,
+              officeName: matchedOffice?.name,
+            }
           : {},
     });
 
@@ -262,11 +262,13 @@ exports.getMyMonthlySummary = async (req, res) => {
     const mon = parseInt(monStr, 10);
 
     if (!year || !mon || mon < 1 || mon > 12) {
-      return res.status(400).json({ message: "Invalid month format. Use YYYY-MM" });
+      return res
+        .status(400)
+        .json({ message: "Invalid month format. Use YYYY-MM" });
     }
 
     const monthStart = new Date(Date.UTC(year, mon - 1, 1));
-    const monthLastDay = new Date(Date.UTC(year, mon, 0));          // last day of month
+    const monthLastDay = new Date(Date.UTC(year, mon, 0)); // last day of month
     const totalDays = monthLastDay.getUTCDate();
     const totalWorkingDays = getWorkingDaysInMonth(year, mon);
 
@@ -277,7 +279,9 @@ exports.getMyMonthlySummary = async (req, res) => {
     }
 
     // Effective start: whichever is later — month start or verification date
-    const verifiedDate = employee.verifiedAt ? new Date(employee.verifiedAt) : monthStart;
+    const verifiedDate = employee.verifiedAt
+      ? new Date(employee.verifiedAt)
+      : monthStart;
     verifiedDate.setUTCHours(0, 0, 0, 0);
     const rawStart = verifiedDate > monthStart ? verifiedDate : monthStart;
 
@@ -320,7 +324,7 @@ exports.getMyMonthlySummary = async (req, res) => {
     const presentDays = records.length;
 
     const lateDays = records.filter(
-      (r) => r.markedLate && r.delayStatus === "REJECTED" // ← was === "REJECTED", fixed
+      (r) => r.markedLate && r.delayStatus === "REJECTED", // ← was === "REJECTED", fixed
     ).length;
 
     const wfhDays = records.filter((r) => r.workMode === "WFH").length;
@@ -343,7 +347,6 @@ exports.getMyMonthlySummary = async (req, res) => {
         wfoDays,
       },
     });
-
   } catch (error) {
     console.error("getMyMonthlySummary error:", error);
     return res.status(500).json({ message: "Server error" });
@@ -353,10 +356,32 @@ exports.getMyMonthlySummary = async (req, res) => {
 // Checkout API
 exports.checkOut = async (req, res) => {
   try {
+    const { latitude, longitude } = req.body;
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
-    console.log("Checkout request for employee:", req.user.id, "on date:", today);
+    const office = await OfficeLocation.findById(attendance.location.officeId);
+
+    console.log(
+      "Checkout request for employee:",
+      req.user.id,
+      "on date:",
+      today,
+    );
+
+    const distance = getDistanceInMeters(
+      Number(latitude),
+      Number(longitude),
+      Number(office.latitude),
+      Number(office.longitude),
+    );
+
+    if (distance > office.radiusInMeters) {
+      return res.status(403).json({
+        success: false,
+        message: "Checkout must be done from the same office location.",
+      });
+    }
 
     const attendance = await Attendance.findOne({
       employee: req.user.id,
@@ -374,6 +399,46 @@ exports.checkOut = async (req, res) => {
       return res.status(400).json({
         message: "Already checked out",
       });
+    }
+
+    if (attendance.workMode === "WFO") {
+      if (!latitude || !longitude) {
+        return res.status(400).json({
+          message: "Location is required for checkout",
+        });
+      }
+
+      const officeLocations = await OfficeLocation.find();
+
+      if (!officeLocations.length) {
+        return res.status(400).json({
+          message: "No office locations configured",
+        });
+      }
+
+      let insideOffice = false;
+
+      for (const office of officeLocations) {
+        const distance = getDistanceInMeters(
+          Number(latitude),
+          Number(longitude),
+          Number(office.latitude),
+          Number(office.longitude),
+        );
+
+        if (distance <= office.radiusInMeters) {
+          insideOffice = true;
+          break;
+        }
+      }
+
+      if (!insideOffice) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "You are outside the office location radius. Checkout not allowed.",
+        });
+      }
     }
 
     attendance.checkOutTime = new Date();
@@ -490,7 +555,9 @@ exports.getMonthlySummaryAdmin = async (req, res) => {
     const now = new Date();
 
     if (!year || !mon || mon < 1 || mon > 12) {
-      return res.status(400).json({ message: "Invalid month format. Use YYYY-MM" });
+      return res
+        .status(400)
+        .json({ message: "Invalid month format. Use YYYY-MM" });
     }
 
     const workingDays = getWorkingDaysInMonth(year, mon);
@@ -510,13 +577,18 @@ exports.getMonthlySummaryAdmin = async (req, res) => {
     records.forEach((r) => {
       if (!r.employee) return; // guard against orphaned records
 
-      const joinDate = r.employee.verifiedAt ? new Date(r.employee.verifiedAt) : start;
+      const joinDate = r.employee.verifiedAt
+        ? new Date(r.employee.verifiedAt)
+        : start;
       const effectiveStart = joinDate > start ? joinDate : start;
 
       const effectiveEnd = new Date(Math.min(end.getTime(), now.getTime()));
       effectiveEnd.setUTCHours(0, 0, 0, 0);
 
-      const effectiveWorkingDays = getWorkingDaysBetween(effectiveStart, effectiveEnd);
+      const effectiveWorkingDays = getWorkingDaysBetween(
+        effectiveStart,
+        effectiveEnd,
+      );
 
       const empId = r.employee._id.toString();
 
@@ -530,8 +602,7 @@ exports.getMonthlySummaryAdmin = async (req, res) => {
           lateDays: 0,
           wfhDays: 0,
           wfoDays: 0,
-          workingDays: effectiveWorkingDays,   // ← per-employee, not global
-
+          workingDays: effectiveWorkingDays, // ← per-employee, not global
         };
       }
 
@@ -551,7 +622,9 @@ exports.getMonthlySummaryAdmin = async (req, res) => {
     }));
 
     // Sort by employeeId for consistent output
-    summary.sort((a, b) => (a.employeeId ?? "").localeCompare(b.employeeId ?? ""));
+    summary.sort((a, b) =>
+      (a.employeeId ?? "").localeCompare(b.employeeId ?? ""),
+    );
 
     return res.json({
       success: true,
@@ -560,7 +633,6 @@ exports.getMonthlySummaryAdmin = async (req, res) => {
       count: summary.length,
       data: summary,
     });
-
   } catch (error) {
     console.error("getMonthlySummaryAdmin error:", error);
     return res.status(500).json({ message: "Server error" });
@@ -578,13 +650,19 @@ const toIST = (date) => {
 const fmtTime = (date) => {
   const d = toIST(date);
   if (!d) return "—";
-  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+  return d.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
 };
 
 const fmtDate = (date) => {
   if (!date) return "—";
   return new Date(date).toLocaleDateString("en-IN", {
-    day: "2-digit", month: "short", year: "numeric",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
   });
 };
 
@@ -599,9 +677,6 @@ const fmtHours = (mins) => {
   const m = mins % 60;
   return `${h}h ${m}m`;
 };
-
-
-
 
 // ─── Preview endpoint (returns JSON for the modal preview) ───────────────────
 
@@ -619,7 +694,9 @@ exports.previewAttendance = async (req, res) => {
       : new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
     const end = to
       ? new Date(to)
-      : new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59));
+      : new Date(
+          Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59),
+        );
 
     const effectiveEnd = new Date(Math.min(end.getTime(), now.getTime()));
     effectiveEnd.setUTCHours(0, 0, 0, 0);
@@ -630,7 +707,9 @@ exports.previewAttendance = async (req, res) => {
     if (employeeId !== "all") {
       const emp = await EmployeeModel.findOne({ employeeId }).lean();
       if (!emp) {
-        return res.status(404).json({ success: false, message: "Employee not found" });
+        return res
+          .status(404)
+          .json({ success: false, message: "Employee not found" });
       }
       attendanceQuery.employee = emp._id;
     }
@@ -646,7 +725,7 @@ exports.previewAttendance = async (req, res) => {
       ...new Map(
         records
           .filter((r) => r.employee?._id)
-          .map((r) => [r.employee._id.toString(), r.employee._id])
+          .map((r) => [r.employee._id.toString(), r.employee._id]),
       ).values(),
     ];
 
@@ -688,12 +767,11 @@ exports.previewAttendance = async (req, res) => {
 
         // Effective start = later of range start or join date (mid-month joiner fix)
         const effectiveStart = new Date(
-          Math.max(start.getTime(), joinDate.setUTCHours(0, 0, 0, 0))
+          Math.max(start.getTime(), joinDate.setUTCHours(0, 0, 0, 0)),
         );
 
         const rangeEnd = new Date(effectiveEnd);
         rangeEnd.setUTCHours(0, 0, 0, 0);
-
 
         empMap[eid] = {
           employeeId: eid,
@@ -719,15 +797,14 @@ exports.previewAttendance = async (req, res) => {
       // Safety cap: can't be present more days than working days
       const present = Math.min(e.presentDays, e.workingDays);
       const absent = Math.max(0, e.workingDays - present);
-      const pct = e.workingDays > 0
-        ? Math.round((present / e.workingDays) * 100)
-        : 0;
+      const pct =
+        e.workingDays > 0 ? Math.round((present / e.workingDays) * 100) : 0;
 
       return {
         employeeId: e.employeeId,
         name: e.name,
         email: e.email,
-        totalDays: e.workingDays,   // working days they were expected to attend
+        totalDays: e.workingDays, // working days they were expected to attend
         presentDays: present,
         absentDays: absent,
         lateDays: e.lateDays,
@@ -745,7 +822,7 @@ exports.previewAttendance = async (req, res) => {
         employeeId: r.employee?.employeeId || "—",
         name: details?.name || "—",
         date: fmtDate(r.date),
-        status: r.markedLate && r.delayStatus == "REJECTED" ? 'LATE' : r.status,
+        status: r.markedLate && r.delayStatus == "REJECTED" ? "LATE" : r.status,
         workMode: r.workMode || "—",
         checkIn: fmtTime(r.checkInTime),
         checkOut: fmtTime(r.checkOutTime),
@@ -764,14 +841,10 @@ exports.previewAttendance = async (req, res) => {
         dateRange: { from: start, to: end },
       },
     });
-
   } catch (err) {
     console.error("Preview error:", err);
     return res.status(500).json({ success: false, message: "Preview failed" });
   }
 };
-
-
-
 
 // ─── Controller ───────────────────────────────────────────────────────────────
