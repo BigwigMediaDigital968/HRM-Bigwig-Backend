@@ -54,6 +54,20 @@ const AttendanceSchema = new mongoose.Schema(
     approvedBy: String,
     approvedAt: Date,
     adminRemarks: String,
+
+    // Early checkout fields
+    earlyCheckoutReason: String,
+    earlyCheckoutAdminRemarks: String, // Optional admin remarks for early checkout
+    earlyCheckoutStatus: {
+      type: String,
+      enum: ["PENDING", "APPROVED", "REJECTED", "NOT_APPLICABLE"],
+      default: "NOT_APPLICABLE",
+    },
+    workingHours: Number, // in minutes
+    isEarlyCheckout: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true },
 );

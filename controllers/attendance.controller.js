@@ -356,7 +356,7 @@ exports.getMyMonthlySummary = async (req, res) => {
 // Checkout API
 exports.checkOut = async (req, res) => {
   try {
-    const { latitude, longitude } = req.body;
+    const { latitude, longitude, earlyCheckoutReason } = req.body;
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     console.log(
@@ -426,14 +426,72 @@ exports.checkOut = async (req, res) => {
       }
     }
 
-    attendance.checkOutTime = new Date();
-    await attendance.save();
+    const checkOutTime = new Date();
 
-    res.json({
-      success: true,
-      message: "Checked out successfully",
-      data: attendance,
-    });
+    // Calculate working hours in minutes
+    const checkInTime = new Date(attendance.checkInTime);
+    const workingMinutes = Math.round(
+      (checkOutTime - checkInTime) / 60000
+    );
+
+    // Minimum required working hours: 8 hours 30 minutes = 510 minutes
+    const MIN_WORKING_MINUTES = 510; // 8h 30m
+
+    // Check if it's early checkout (less than 8h 30m)
+    const isEarlyCheckout = workingMinutes < MIN_WORKING_MINUTES;
+
+    if (isEarlyCheckout) {
+      // Early checkout - reason is required
+      if (!earlyCheckoutReason || earlyCheckoutReason.trim() === "") {
+        return res.status(400).json({
+          success: false,
+          message: "Reason is required for early checkout (less than 8 hours 30 minutes worked)",
+          isEarlyCheckout: true,
+          workingMinutes,
+          requiredMinutes: MIN_WORKING_MINUTES,
+        });
+      }
+
+      // Store early checkout data with PENDING status (needs admin approval)
+      attendance.checkOutTime = checkOutTime;
+      attendance.workingHours = workingMinutes;
+      attendance.isEarlyCheckout = true;
+      attendance.earlyCheckoutReason = earlyCheckoutReason.trim();
+      attendance.earlyCheckoutStatus = "PENDING";
+
+      await attendance.save();
+
+      return res.json({
+        success: true,
+        message: "Early checkout submitted. Pending admin approval.",
+        isEarlyCheckout: true,
+        earlyCheckoutStatus: "PENDING",
+        workingHours: {
+          minutes: workingMinutes,
+          formatted: `${Math.floor(workingMinutes / 60)}h ${workingMinutes % 60}m`,
+        },
+        requiredHours: "8h 30m",
+        data: attendance,
+      });
+    } else {
+      // Normal checkout - working hours >= 8h 30m, no reason needed
+      attendance.checkOutTime = checkOutTime;
+      attendance.workingHours = workingMinutes;
+      attendance.isEarlyCheckout = false;
+      attendance.earlyCheckoutStatus = "NOT_APPLICABLE";
+
+      await attendance.save();
+
+      return res.json({
+        success: true,
+        message: "Checked out successfully",
+        workingHours: {
+          minutes: workingMinutes,
+          formatted: `${Math.floor(workingMinutes / 60)}h ${workingMinutes % 60}m`,
+        },
+        data: attendance,
+      });
+    }
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }
@@ -444,12 +502,13 @@ exports.checkOut = async (req, res) => {
  */
 exports.getAllAttendanceAdmin = async (req, res) => {
   try {
-    const { date, employeeId, lateOnly } = req.query;
+    const { date, employeeId, lateOnly, earlyCheckoutOnly } = req.query;
 
     const filter = {};
 
     if (date) filter.date = date;
     if (lateOnly === "true") filter.markedLate = true;
+    if (earlyCheckoutOnly === "true") filter.isEarlyCheckout = true;
 
     let attendanceQuery = Attendance.find(filter)
       .populate("employee", "employeeId email role")
@@ -525,7 +584,61 @@ exports.approveOrRejectDelay = async (req, res) => {
 };
 
 /**
- * ADMIN: MONTHLY ATTENDANCE SUMMARY (ALL)
+ * ADMIN: APPROVE / REJECT EARLY CHECKOUT
+ */
+exports.approveOrRejectEarlyCheckout = async (req, res) => {
+  try {
+    if (!req.body) {
+      return res.status(400).json({ message: "Request body missing" });
+    }
+
+    const { status, adminRemarks } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ message: "Status is required" });
+    }
+
+    if (!["APPROVED", "REJECTED"].includes(status)) {
+      return res.status(400).json({ message: "Invalid status" });
+    }
+
+    const attendance = await Attendance.findById(req.params.attendanceId);
+    if (!attendance) {
+      return res.status(404).json({ message: "Attendance not found" });
+    }
+
+    if (!attendance.isEarlyCheckout) {
+      return res.status(400).json({
+        message: "This attendance does not have an early checkout request",
+      });
+    }
+
+    if (attendance.earlyCheckoutStatus === "NOT_APPLICABLE") {
+      return res.status(400).json({
+        message: "This attendance does not have an early checkout request",
+      });
+    }
+
+    attendance.earlyCheckoutStatus = status;
+    attendance.earlyCheckoutAdminRemarks = adminRemarks || ""; // Optional - can be left blank
+    attendance.approvedBy = req.user.employeeId;
+    attendance.approvedAt = new Date();
+
+    await attendance.save();
+
+    res.json({
+      success: true,
+      message: `Early checkout ${status.toLowerCase()} successfully`,
+      data: attendance,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+/**
+ * ADMIN: GET ALL ATTENDANCE (UPDATED - includes early checkout filter)
  */
 exports.getMonthlySummaryAdmin = async (req, res) => {
   try {

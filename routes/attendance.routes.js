@@ -5,6 +5,7 @@ const {
   markAttendance,
   getAllAttendanceAdmin,
   approveOrRejectDelay,
+  approveOrRejectEarlyCheckout,
   getMyAttendance,
   getMyMonthlySummary,
   getMonthlySummaryAdmin,
@@ -27,6 +28,13 @@ router.put(
   protect,
   adminOnly,
   approveOrRejectDelay,
+);
+
+router.put(
+  "/admin/:attendanceId/early-checkout-action",
+  protect,
+  adminOnly,
+  approveOrRejectEarlyCheckout,
 );
 
 router.get(
