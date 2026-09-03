@@ -8,10 +8,13 @@ const LeaveBalance = require("../models/LeaveBalance.model");
 
 // Creating new employee
 exports.createEmployee = async (req, res) => {
+  console.log("req.body", req.body);
   try {
     const { email, role, designation,
       department,
       reportingManager, } = req.body;
+
+    console.log("req.body", req.body);
 
     const existing = await Employee.findOne({ email });
     if (existing) {
