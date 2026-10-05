@@ -154,7 +154,7 @@ exports.markAttendance = async (req, res) => {
 
     const lateTime = new Date();
     // 10:45 IST = 05:15 UTC
-    lateTime.setUTCHours(5, 15, 0, 0);
+    lateTime.setUTCHours(5, 16, 0, 0);
 
     if (now > lateTime) {
       markedLate = true;
